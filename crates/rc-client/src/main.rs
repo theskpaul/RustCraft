@@ -1,3 +1,4 @@
-fn main() {
-    println!("Hello, world!");
-}
+#[allow(dead_code)] // removed once main.rs uses it
+mod stats;
+
+fn main() {}
