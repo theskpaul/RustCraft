@@ -83,7 +83,7 @@ impl GpuContext {
             .filter(|a| a.is_surface_supported(&surface))
             .filter(|a| {
                 want.as_ref()
-                    .map_or(true, |w| a.get_info().name.to_lowercase().contains(w))
+                    .is_none_or(|w| a.get_info().name.to_lowercase().contains(w))
             })
             .collect();
         cands.sort_by_key(|a| std::cmp::Reverse(rank(a.get_info().device_type)));
