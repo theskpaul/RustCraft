@@ -8,3 +8,6 @@ wgpu.workspace = true
 pollster.workspace = true
 log.workspace = true
 anyhow.workspace = true
+rc-core = { path = "../rc-core" }
+glam = "=0.30.2"
+bytemuck = { version = "1", features = ["derive"] }
