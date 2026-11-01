@@ -16,6 +16,8 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
+const SLOW_FRAME: Duration = Duration::from_millis(20);
+
 struct State {
     window: Arc<Window>,
     gpu: GpuContext,
@@ -224,7 +226,15 @@ impl ApplicationHandler for App {
                 fly::update(&mut s.camera, &mut s.fly, dt);
 
                 match render_chunk_frame(&s.gpu, &s.chunks, s.camera.view_proj()) {
-                    Ok(FrameOutcome::Presented) => {
+                    Ok((FrameOutcome::Presented, t)) => {
+                        if t.total() > SLOW_FRAME {
+                            log::warn!(
+                                "slow frame: acquire {:.2}ms submit {:.2}ms present {:.2}ms",
+                                t.acquire.as_secs_f64() * 1e3,
+                                t.submit.as_secs_f64() * 1e3,
+                                t.present.as_secs_f64() * 1e3
+                            );
+                        }
                         if let Some(r) = s.stats.tick() {
                             log::info!(
                                 "frame: {} frames, avg {:.2}ms ({:.1} fps), p50 {:.2}, p99 {:.2}, max {:.2}",
@@ -242,7 +252,7 @@ impl ApplicationHandler for App {
                             ));
                         }
                     }
-                    Ok(other) => log::debug!("frame outcome: {other:?}"),
+                    Ok((other, _)) => log::debug!("frame outcome: {other:?}"),
                     Err(e) => {
                         log::error!("render error: {e:#}");
                         self.error = Some(e);

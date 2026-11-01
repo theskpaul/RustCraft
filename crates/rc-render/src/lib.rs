@@ -7,6 +7,6 @@ pub mod gpu;
 pub mod mesher;
 pub mod triangle;
 
-pub use frame::{FrameOutcome, render_chunk_frame};
+pub use frame::{FrameOutcome, FrameTimings, render_chunk_frame};
 pub use gpu::GpuContext;
 pub use triangle::{TrianglePipeline, render_frame};
