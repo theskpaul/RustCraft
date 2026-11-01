@@ -14,11 +14,15 @@ struct VsOut {
 };
 
 var<private> FACE_SHADE: array<f32, 6> = array<f32, 6>(0.8, 0.8, 1.0, 0.5, 0.9, 0.9);
+
+// Linear-light values. Authored sRGB: magenta (1,0,1), stone grey 0.5,
+// dirt (0.45,0.3,0.15), grass (0.3,0.65,0.2). Surface is sRGB, so the
+// hardware encodes our output; we must output linear.
 var<private> PALETTE: array<vec3<f32>, 4> = array<vec3<f32>, 4>(
     vec3<f32>(1.0, 0.0, 1.0),
-    vec3<f32>(0.5, 0.5, 0.5),
-    vec3<f32>(0.45, 0.3, 0.15),
-    vec3<f32>(0.3, 0.65, 0.2),
+    vec3<f32>(0.214, 0.214, 0.214),
+    vec3<f32>(0.1706, 0.0732, 0.0196),
+    vec3<f32>(0.0732, 0.3801, 0.0331),
 );
 
 @vertex

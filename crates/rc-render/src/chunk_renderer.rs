@@ -1,9 +1,13 @@
+use crate::color::srgb3_to_linear;
 use crate::mesher::{ChunkMesh, Vertex};
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
 use wgpu::util::DeviceExt;
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+/// Sky color as authored (sRGB). Converted to linear when used as the clear value.
+const SKY_SRGB: [f32; 3] = [0.53, 0.72, 0.92];
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -179,6 +183,8 @@ impl ChunkRenderer {
         };
         queue.write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&globals));
 
+        let sky = srgb3_to_linear(SKY_SRGB);
+
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("chunk_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -187,9 +193,9 @@ impl ChunkRenderer {
                 resolve_target: None,
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.53,
-                        g: 0.72,
-                        b: 0.92,
+                        r: sky[0] as f64,
+                        g: sky[1] as f64,
+                        b: sky[2] as f64,
                         a: 1.0,
                     }),
                     store: wgpu::StoreOp::Store,

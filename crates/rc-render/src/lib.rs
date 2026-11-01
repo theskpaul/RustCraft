@@ -2,6 +2,7 @@
 //! never on simulation logic.
 pub mod camera;
 pub mod chunk_renderer;
+pub mod color;
 pub mod frame;
 pub mod gpu;
 pub mod mesher;
