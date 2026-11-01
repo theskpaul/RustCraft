@@ -1534,6 +1534,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "env_logger",
+ "glam",
  "log",
  "rc-core",
  "rc-render",

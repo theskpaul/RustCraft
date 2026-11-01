@@ -10,3 +10,4 @@ winit.workspace = true
 log.workspace = true
 env_logger.workspace = true
 anyhow.workspace = true
+glam = "=0.30.2"

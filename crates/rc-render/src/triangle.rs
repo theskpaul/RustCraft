@@ -1,15 +1,9 @@
+use crate::frame::FrameOutcome;
 use crate::gpu::GpuContext;
 use anyhow::{Result, bail};
 
 pub struct TrianglePipeline {
     pipeline: wgpu::RenderPipeline,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum FrameOutcome {
-    Presented,
-    Reconfigured,
-    Skipped,
 }
 
 impl TrianglePipeline {
