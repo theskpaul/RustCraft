@@ -47,8 +47,9 @@ fn test_chunk() -> Chunk {
             }
         }
     }
-    for y in 8..13 {
-        c.set(8, y, 8, BlockId::STONE); // pillar, checks depth ordering
+    // Rooted in the terrain: the column height at (8,8) is 6.
+    for y in 6..13 {
+        c.set(8, y, 8, BlockId::STONE);
     }
     c
 }
