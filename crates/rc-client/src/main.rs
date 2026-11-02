@@ -1,5 +1,7 @@
+mod activity;
 mod fly;
 mod stats;
+mod trace;
 
 use anyhow::{Context, Result};
 use rc_core::{BlockId, Chunk};
@@ -29,6 +31,11 @@ struct State {
     started: Instant,
     last_frame: Instant,
     exit_after: Option<Duration>,
+    activity: activity::Activity,        // since the last frame
+    window_activity: activity::Activity, // since the last per-second report
+    trace: Option<(std::path::PathBuf, trace::Trace)>,
+    frame_no: u32,
+    title_updates: bool,
 }
 
 /// Deterministic blocky terrain for the 2a visual test.
@@ -97,6 +104,12 @@ impl State {
             started: now,
             last_frame: now,
             exit_after,
+            activity: Default::default(),
+            window_activity: Default::default(),
+            trace: std::env::var_os("RC_TRACE")
+                .map(|p| (std::path::PathBuf::from(p), trace::Trace::new(216_000))),
+            frame_no: 0,
+            title_updates: std::env::var_os("RC_NO_TITLE").is_none(),
         })
     }
 
@@ -133,7 +146,7 @@ impl State {
         }
     }
 
-    fn print_overall(&self) {
+    fn finish(&self) {
         if let Some(r) = self.stats.overall() {
             log::info!(
                 "SUMMARY: frames={} avg={:.2}ms ({:.1} fps) p50={:.2}ms p99={:.2}ms (1% low {:.1} fps) max={:.2}ms software={}",
@@ -146,6 +159,18 @@ impl State {
                 r.max_ms,
                 self.gpu.is_software
             );
+        }
+
+        if let Some((path, tr)) = &self.trace {
+            match tr.save(path) {
+                Ok(()) => log::info!(
+                    "trace: wrote {} frames to {} ({} dropped)",
+                    tr.recorded(),
+                    path.display(),
+                    tr.dropped()
+                ),
+                Err(e) => log::error!("trace: could not write {}: {e}", path.display()),
+            }
         }
     }
 }
@@ -173,11 +198,12 @@ impl ApplicationHandler for App {
 
     fn device_event(&mut self, _el: &ActiveEventLoop, _id: DeviceId, event: DeviceEvent) {
         let Some(s) = self.state.as_mut() else { return };
-        if let DeviceEvent::MouseMotion { delta } = event
-            && s.grabbed
-        {
-            s.fly.look.0 += delta.0 as f32;
-            s.fly.look.1 += delta.1 as f32;
+        if let DeviceEvent::MouseMotion { delta } = event {
+            s.activity.mouse_events += 1;
+            if s.grabbed {
+                s.fly.look.0 += delta.0 as f32;
+                s.fly.look.1 += delta.1 as f32;
+            }
         }
     }
 
@@ -185,18 +211,21 @@ impl ApplicationHandler for App {
         let Some(s) = self.state.as_mut() else { return };
         match event {
             WindowEvent::CloseRequested => {
-                s.print_overall();
+                s.finish();
                 el.exit();
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 let down = event.state == ElementState::Pressed;
+                if !event.repeat {
+                    s.activity.key_events += 1;
+                }
                 if let PhysicalKey::Code(code) = event.physical_key {
                     if down && !event.repeat && code == KeyCode::Escape {
                         // First Esc releases the mouse, second Esc exits.
                         if s.grabbed {
                             s.set_grab(false);
                         } else {
-                            s.print_overall();
+                            s.finish();
                             el.exit();
                         }
                     } else {
@@ -221,35 +250,60 @@ impl ApplicationHandler for App {
             }
             WindowEvent::RedrawRequested => {
                 let now = Instant::now();
-                let dt = (now - s.last_frame).as_secs_f32().min(0.1);
+                let raw_dt = now - s.last_frame;
+                let dt = raw_dt.as_secs_f32().min(0.1);
                 s.last_frame = now;
                 fly::update(&mut s.camera, &mut s.fly, dt);
+                let act = s.activity.take();
+                s.window_activity.add(act);
 
                 match render_chunk_frame(&s.gpu, &s.chunks, s.camera.view_proj()) {
                     Ok((FrameOutcome::Presented, t)) => {
+                        if let Some((_, tr)) = s.trace.as_mut() {
+                            tr.push(trace::FrameRecord {
+                                frame: s.frame_no,
+                                t_ms: s.started.elapsed().as_secs_f32() * 1e3,
+                                dt_ms: raw_dt.as_secs_f32() * 1e3,
+                                acquire_ms: t.acquire.as_secs_f32() * 1e3,
+                                submit_ms: t.submit.as_secs_f32() * 1e3,
+                                present_ms: t.present.as_secs_f32() * 1e3,
+                                mouse_events: u16::try_from(act.mouse_events).unwrap_or(u16::MAX),
+                                key_events: u16::try_from(act.key_events).unwrap_or(u16::MAX),
+                                held: activity::held_mask(&s.fly),
+                            });
+                        }
+                        s.frame_no += 1;
                         if t.total() > SLOW_FRAME {
                             log::warn!(
-                                "slow frame: acquire {:.2}ms submit {:.2}ms present {:.2}ms",
+                                "slow frame: acquire {:.2}ms submit {:.2}ms present {:.2}ms | input: mouse={} keys={} held={}",
                                 t.acquire.as_secs_f64() * 1e3,
                                 t.submit.as_secs_f64() * 1e3,
-                                t.present.as_secs_f64() * 1e3
+                                t.present.as_secs_f64() * 1e3,
+                                act.mouse_events,
+                                act.key_events,
+                                activity::keys_label(&s.fly)
                             );
                         }
                         if let Some(r) = s.stats.tick() {
+                            let w = s.window_activity.take();
                             log::info!(
-                                "frame: {} frames, avg {:.2}ms ({:.1} fps), p50 {:.2}, p99 {:.2}, max {:.2}",
+                                "frame: {} frames, avg {:.2}ms ({:.1} fps), p50 {:.2}, p99 {:.2}, max {:.2}, input: {} mouse, {} key events",
                                 r.frames,
                                 r.avg_ms,
                                 r.fps(),
                                 r.p50_ms,
                                 r.p99_ms,
-                                r.max_ms
+                                r.max_ms,
+                                w.mouse_events,
+                                w.key_events
                             );
-                            s.window.set_title(&format!(
-                                "RustCraft M2a | {:.1} fps | {:.2} ms",
-                                r.fps(),
-                                r.avg_ms
-                            ));
+                            if s.title_updates {
+                                s.window.set_title(&format!(
+                                    "RustCraft M2a | {:.1} fps | {:.2} ms",
+                                    r.fps(),
+                                    r.avg_ms
+                                ));
+                            }
                         }
                     }
                     Ok((other, _)) => log::debug!("frame outcome: {other:?}"),
@@ -263,7 +317,7 @@ impl ApplicationHandler for App {
                 if let Some(limit) = s.exit_after
                     && s.started.elapsed() >= limit
                 {
-                    s.print_overall();
+                    s.finish();
                     el.exit();
                 }
             }
