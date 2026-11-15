@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use rc_core::{BlockId, Chunk};
 use rc_render::camera::Camera;
 use rc_render::chunk_renderer::ChunkRenderer;
+use rc_render::greedy::mesh_chunk_greedy;
 use rc_render::mesher::mesh_chunk;
 use rc_render::{FrameOutcome, GpuContext, render_chunk_frame};
 use std::sync::Arc;
@@ -78,12 +79,15 @@ impl State {
 
         let mut chunks =
             ChunkRenderer::new(&gpu.device, gpu.config.format, (size.width, size.height));
-        let mesh = mesh_chunk(&test_chunk());
+        let chunk = test_chunk();
+        let naive = mesh_chunk(&chunk);
+        let mesh = mesh_chunk_greedy(&chunk);
         log::info!(
-            "test chunk: {} faces, {} vertices, {} indices",
+            "test chunk: naive {} quads / {} vertices, greedy {} quads / {} vertices",
+            naive.face_count(),
+            naive.vertices.len(),
             mesh.face_count(),
-            mesh.vertices.len(),
-            mesh.indices.len()
+            mesh.vertices.len()
         );
         chunks.upload_chunk(&gpu.device, &mesh, [0, 0, 0]);
 
