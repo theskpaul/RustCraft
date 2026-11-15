@@ -1,6 +1,8 @@
 pub mod block;
 pub mod chunk;
+pub mod pos;
+pub mod view;
 pub use block::BlockId;
 pub use chunk::{CHUNK_SIZE, CHUNK_VOLUME, Chunk};
-pub mod view;
+pub use pos::ChunkPos;
 pub use view::{BlockView, Neighbourhood};

@@ -93,7 +93,7 @@ pub fn mesh_chunk(chunk: &impl BlockView) -> ChunkMesh {
 mod tests {
     use super::*;
     use glam::Vec3;
-    use rc_core::{BlockId, Chunk};
+    use rc_core::{BlockId, Chunk, ChunkPos};
 
     fn filled(pred: impl Fn(usize, usize, usize) -> bool) -> Chunk {
         let mut c = Chunk::new_empty();
@@ -170,6 +170,18 @@ mod tests {
                 "face {} geo {:?}",
                 v[0].face,
                 geo
+            );
+        }
+    }
+
+    #[test]
+    fn chunkpos_neighbour_order_matches_face_normals() {
+        let origin = ChunkPos::new(0, 0, 0);
+        for (i, n) in FACE_NORMALS.iter().enumerate() {
+            assert_eq!(
+                origin.neighbour(i),
+                ChunkPos::new(n[0], n[1], n[2]),
+                "face {i}"
             );
         }
     }
