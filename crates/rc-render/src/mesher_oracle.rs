@@ -119,6 +119,7 @@ pub fn assert_same(name: &str, got: &[UnitFace], want: &[UnitFace]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::greedy::mesh_chunk_greedy;
     use crate::mesher::mesh_chunk;
     use rc_core::BlockId;
 
@@ -134,10 +135,9 @@ mod tests {
         c
     }
 
-    #[test]
-    fn naive_mesher_matches_reference() {
+    fn cases() -> Vec<(&'static str, Chunk)> {
         let stone = |p: bool| if p { BlockId::STONE } else { BlockId::AIR };
-        let cases: Vec<(&str, Chunk)> = vec![
+        vec![
             ("empty", Chunk::new_empty()),
             ("full", chunk_from(|_, _, _| BlockId::STONE)),
             ("corner block", chunk_from(|x, y, z| stone(x + y + z == 0))),
@@ -159,11 +159,26 @@ mod tests {
                     _ => BlockId::AIR,
                 }),
             ),
-        ];
-        for (name, chunk) in &cases {
+        ]
+    }
+
+    #[test]
+    fn naive_mesher_matches_reference() {
+        for (name, chunk) in &cases() {
             assert_same(
                 name,
                 &covered_faces(&mesh_chunk(chunk)),
+                &reference_faces(chunk),
+            );
+        }
+    }
+
+    #[test]
+    fn greedy_mesher_matches_reference() {
+        for (name, chunk) in &cases() {
+            assert_same(
+                name,
+                &covered_faces(&mesh_chunk_greedy(chunk)),
                 &reference_faces(chunk),
             );
         }

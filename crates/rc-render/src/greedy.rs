@@ -1,6 +1,6 @@
 //! Greedy merging of one 2D slice of faces into rectangles.
 //! Pure logic: no GPU, no chunk. The chunk-to-mask part comes in the next step.
-use crate::mesher::FACE_NORMALS;
+use crate::mesher::{ChunkMesh, FACE_NORMALS, Vertex};
 use rc_core::{CHUNK_SIZE, Chunk};
 
 const N: usize = CHUNK_SIZE;
@@ -93,6 +93,56 @@ pub fn build_mask(chunk: &Chunk, face: usize, layer: usize) -> Mask {
     })
 }
 
+/// Greedy mesher: same output contract as `mesher::mesh_chunk`,
+/// but adjacent identical faces are merged into one quad.
+pub fn mesh_chunk_greedy(chunk: &Chunk) -> ChunkMesh {
+    let mut mesh = ChunkMesh::default();
+    for face in 0..6 {
+        for layer in 0..N {
+            let mask = build_mask(chunk, face, layer);
+            for rect in merge_mask(&mask) {
+                push_quad(&mut mesh, face, layer, &rect);
+            }
+        }
+    }
+    mesh
+}
+
+/// Append one rectangle as 4 vertices + 6 indices.
+fn push_quad(mesh: &mut ChunkMesh, face: usize, layer: usize, r: &Rect) {
+    let axis = face / 2;
+    let positive = face.is_multiple_of(2);
+    let (ua, va) = ((axis + 1) % 3, (axis + 2) % 3);
+    // A + face sits on the far side of its cell, a - face on the near side.
+    let plane = (layer + positive as usize) as u8;
+
+    let (u0, v0) = (r.u, r.v);
+    let (u1, v1) = (r.u + r.w, r.v + r.h);
+    // Counter-clockwise as seen from outside. The - faces look the other
+    // way, so their corner order is reversed.
+    let corners: [(u8, u8); 4] = if positive {
+        [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
+    } else {
+        [(u0, v0), (u0, v1), (u1, v1), (u1, v0)]
+    };
+
+    let base = mesh.vertices.len() as u32;
+    for (i, &(u, v)) in corners.iter().enumerate() {
+        let mut pos = [0u8; 3];
+        pos[axis] = plane;
+        pos[ua] = u;
+        pos[va] = v;
+        mesh.vertices.push(Vertex {
+            pos,
+            face: face as u8,
+            block: r.block,
+            corner: i as u16,
+        });
+    }
+    mesh.indices
+        .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,6 +150,54 @@ mod tests {
 
     fn count(m: &Mask) -> usize {
         m.iter().flatten().filter(|c| c.is_some()).count()
+    }
+
+    #[test]
+    fn full_chunk_is_six_quads() {
+        let mut c = Chunk::new_empty();
+        for y in 0..16 {
+            for z in 0..16 {
+                for x in 0..16 {
+                    c.set(x, y, z, BlockId::STONE);
+                }
+            }
+        }
+        let m = mesh_chunk_greedy(&c);
+        assert_eq!(m.face_count(), 6); // naive gives 1536
+        assert_eq!(m.vertices.len(), 24);
+    }
+
+    #[test]
+    fn greedy_winding_matches_face_normals() {
+        let mut c = Chunk::new_empty();
+        for y in 0..16 {
+            for z in 0..16 {
+                for x in 0..16 {
+                    if (x * 7 + y * 13 + z * 5) % 3 == 0 {
+                        c.set(x, y, z, BlockId::STONE);
+                    }
+                }
+            }
+        }
+        let m = mesh_chunk_greedy(&c);
+        assert!(!m.is_empty());
+        let p = |v: &Vertex| glam::Vec3::new(v.pos[0] as f32, v.pos[1] as f32, v.pos[2] as f32);
+        for tri in m.indices.chunks(3) {
+            let v = [
+                &m.vertices[tri[0] as usize],
+                &m.vertices[tri[1] as usize],
+                &m.vertices[tri[2] as usize],
+            ];
+            let geo = (p(v[1]) - p(v[0])).cross(p(v[2]) - p(v[0])).normalize();
+            let e = FACE_NORMALS[v[0].face as usize];
+            let exp = glam::Vec3::new(e[0] as f32, e[1] as f32, e[2] as f32);
+            assert!(
+                (geo - exp).length() < 1e-5,
+                "face {} geo {:?}",
+                v[0].face,
+                geo
+            );
+        }
     }
 
     #[test]
