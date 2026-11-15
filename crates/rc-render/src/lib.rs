@@ -5,6 +5,7 @@ pub mod chunk_renderer;
 pub mod color;
 pub mod frame;
 pub mod gpu;
+pub mod greedy;
 pub mod mesher;
 
 pub use frame::{FrameOutcome, FrameTimings, render_chunk_frame};
