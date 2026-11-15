@@ -3,7 +3,7 @@
 //! chunk's block data. Independent of how any mesher builds quads.
 
 use crate::mesher::{ChunkMesh, FACE_NORMALS, Vertex};
-use rc_core::{CHUNK_SIZE, Chunk};
+use rc_core::{BlockView, CHUNK_SIZE};
 
 /// One unit square of surface: the solid block cell it belongs to, which of
 /// its 6 faces, and the block id. Derives `Ord` so Vecs of these can be sorted
@@ -16,7 +16,7 @@ pub struct UnitFace {
 }
 
 /// Ground truth: every solid cell, every face whose neighbour is air.
-pub fn reference_faces(chunk: &Chunk) -> Vec<UnitFace> {
+pub fn reference_faces(chunk: &impl BlockView) -> Vec<UnitFace> {
     let n = CHUNK_SIZE as i32;
     let mut out = Vec::new();
     for y in 0..n {
@@ -121,7 +121,7 @@ mod tests {
     use super::*;
     use crate::greedy::mesh_chunk_greedy;
     use crate::mesher::mesh_chunk;
-    use rc_core::BlockId;
+    use rc_core::{BlockId, Chunk, Neighbourhood};
 
     fn chunk_from(f: impl Fn(usize, usize, usize) -> BlockId) -> Chunk {
         let mut c = Chunk::new_empty();
@@ -210,5 +210,40 @@ mod tests {
             },
         ];
         assert_same("wide quad", &covered_faces(&mesh), &want);
+    }
+
+    fn solid_if(p: bool) -> BlockId {
+        if p { BlockId::STONE } else { BlockId::AIR }
+    }
+
+    #[test]
+    fn shared_border_between_solid_chunks_has_no_faces() {
+        let full = chunk_from(|_, _, _| BlockId::STONE);
+        // A full chunk with another full chunk to its +X side.
+        let nb = Neighbourhood::new(&full, [Some(&full), None, None, None, None, None]);
+        // +X is covered; the other 5 sides are exposed (neighbours missing = air).
+        assert_eq!(mesh_chunk(&nb).face_count(), 5 * 256);
+        assert_eq!(mesh_chunk_greedy(&nb).face_count(), 5);
+    }
+
+    #[test]
+    fn meshers_match_reference_with_all_six_neighbours() {
+        let center = chunk_from(|x, y, z| solid_if((x * 7 + y * 13 + z * 5) % 3 == 0));
+        let others: Vec<Chunk> = (0..6)
+            .map(|i| chunk_from(move |x, y, z| solid_if((x * 3 + y * 5 + z * 11 + i) % 2 == 0)))
+            .collect();
+        let nb = Neighbourhood::new(&center, std::array::from_fn(|i| Some(&others[i])));
+
+        let want = reference_faces(&nb);
+        assert_same(
+            "naive + neighbours",
+            &covered_faces(&mesh_chunk(&nb)),
+            &want,
+        );
+        assert_same(
+            "greedy + neighbours",
+            &covered_faces(&mesh_chunk_greedy(&nb)),
+            &want,
+        );
     }
 }

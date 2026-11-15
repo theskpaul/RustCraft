@@ -1,7 +1,7 @@
 //! Greedy merging of one 2D slice of faces into rectangles.
 //! Pure logic: no GPU, no chunk. The chunk-to-mask part comes in the next step.
 use crate::mesher::{ChunkMesh, FACE_NORMALS, Vertex};
-use rc_core::{CHUNK_SIZE, Chunk};
+use rc_core::{BlockView, CHUNK_SIZE};
 
 const N: usize = CHUNK_SIZE;
 
@@ -71,7 +71,7 @@ pub fn merge_mask(mask: &Mask) -> Vec<Rect> {
 /// `layer` is the coordinate along the face's axis (0..16).
 /// A cell is `Some(block)` if that block is solid and its neighbour in the
 /// face direction is air (the same rule the naive mesher uses).
-pub fn build_mask(chunk: &Chunk, face: usize, layer: usize) -> Mask {
+pub fn build_mask(chunk: &impl BlockView, face: usize, layer: usize) -> Mask {
     let axis = face / 2; // 0 = x, 1 = y, 2 = z
     let (ua, va) = ((axis + 1) % 3, (axis + 2) % 3); // the two other axes
     let nrm = FACE_NORMALS[face];
@@ -95,7 +95,7 @@ pub fn build_mask(chunk: &Chunk, face: usize, layer: usize) -> Mask {
 
 /// Greedy mesher: same output contract as `mesher::mesh_chunk`,
 /// but adjacent identical faces are merged into one quad.
-pub fn mesh_chunk_greedy(chunk: &Chunk) -> ChunkMesh {
+pub fn mesh_chunk_greedy(chunk: &impl BlockView) -> ChunkMesh {
     let mut mesh = ChunkMesh::default();
     for face in 0..6 {
         for layer in 0..N {
@@ -146,7 +146,7 @@ fn push_quad(mesh: &mut ChunkMesh, face: usize, layer: usize, r: &Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rc_core::BlockId;
+    use rc_core::{BlockId, Chunk};
 
     fn count(m: &Mask) -> usize {
         m.iter().flatten().filter(|c| c.is_some()).count()

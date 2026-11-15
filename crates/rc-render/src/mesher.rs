@@ -1,5 +1,5 @@
 use bytemuck::{Pod, Zeroable};
-use rc_core::{CHUNK_SIZE, Chunk};
+use rc_core::{BlockView, CHUNK_SIZE};
 
 /// 8 bytes. `corner` is unused by the shader in 2a (reserved for UV/AO in 2b).
 #[repr(C)]
@@ -48,7 +48,7 @@ impl ChunkMesh {
 }
 
 /// Naive mesher: one quad per exposed face. Out-of-chunk neighbours are air.
-pub fn mesh_chunk(chunk: &Chunk) -> ChunkMesh {
+pub fn mesh_chunk(chunk: &impl BlockView) -> ChunkMesh {
     let mut mesh = ChunkMesh::default();
     let n = CHUNK_SIZE as i32;
     for y in 0..n {
@@ -93,7 +93,7 @@ pub fn mesh_chunk(chunk: &Chunk) -> ChunkMesh {
 mod tests {
     use super::*;
     use glam::Vec3;
-    use rc_core::BlockId;
+    use rc_core::{BlockId, Chunk};
 
     fn filled(pred: impl Fn(usize, usize, usize) -> bool) -> Chunk {
         let mut c = Chunk::new_empty();
