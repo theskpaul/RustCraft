@@ -9,3 +9,6 @@ pub mod mesher;
 
 pub use frame::{FrameOutcome, FrameTimings, render_chunk_frame};
 pub use gpu::GpuContext;
+
+#[cfg(test)]
+mod mesher_oracle;
