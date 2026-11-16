@@ -15,4 +15,5 @@ Verified 2026-11-15 (pasted output): cargo nextest run --workspace: 50 tests pas
 2b-2 step 4: complete (World).
 2b-2 step 5a: complete (per-chunk origin bind group).
 2b-2 step 5b: complete (3x3 patch via World + neighbourhood meshing).
-Verified 2026-11-16 (pasted output + screenshot): nextest 55 pass; world: 9 chunks, greedy quads 651 with neighbours vs 867 isolated; no visible seams; Fifo, debug, avg 16.69 ms, p99 22.24, max 43.49 (acquire stalls while idle; not yet investigated).
+Verified 2026-11-16 (pasted output + screenshot): nextest 55 pass; world: 9 chunks, greedy quads 651 with neighbours vs 867 isolated; no visible seams; Fifo, debug, avg 16.69 ms, p99 22.24, max 43.49.
+2b-2: complete. Benchmark (release, Fifo, 1280x720, RC_NO_TITLE=1, idle, 2026-11-16, pasted): 1801 frames, avg 16.67 ms, p50 16.66, p99 18.35, max 33.12; 6 frames with acquire > 19 ms (0.3%). submit ~0.5 ms. Vsync-bound; stall cause between debug/title/logging/input not isolated.
