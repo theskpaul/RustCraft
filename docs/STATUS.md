@@ -14,4 +14,5 @@ Verified 2b-1 (pasted output, 2026-11-15):
 Verified 2026-11-15 (pasted output): cargo nextest run --workspace: 50 tests pass (rc-core 11, rc-render 31, rc-client 8); clippy clean.
 2b-2 step 4: complete (World: chunk map, world-coord get/set, neighbourhood).
 Verified 2026-11-16 (pasted output): cargo nextest run --workspace: 55 tests pass (rc-core 16, rc-render 31, rc-client 8); clippy clean.
-Next: step 5 = renderer draws several chunks.
+2b-2 step 5a: complete (per-chunk origin bind group; ChunkRenderer holds HashMap<ChunkPos, GpuMesh>).
+Verified 2026-11-16 (pasted output): cargo nextest run --workspace: 55 tests pass; clippy clean; scene unchanged on screen (Fifo, ~60 fps, vsync-bound).
