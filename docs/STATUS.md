@@ -12,7 +12,7 @@ Verified 2b-1 (pasted output, 2026-11-15):
 2b-2 step 2: complete (both meshers generic over BlockView; border-face tests).
 2b-2 step 3: complete (ChunkPos, from_block with div_euclid/rem_euclid, face-order test).
 Verified 2026-11-15 (pasted output): cargo nextest run --workspace: 50 tests pass (rc-core 11, rc-render 31, rc-client 8); clippy clean.
-2b-2 step 4: complete (World: chunk map, world-coord get/set, neighbourhood).
-Verified 2026-11-16 (pasted output): cargo nextest run --workspace: 55 tests pass (rc-core 16, rc-render 31, rc-client 8); clippy clean.
-2b-2 step 5a: complete (per-chunk origin bind group; ChunkRenderer holds HashMap<ChunkPos, GpuMesh>).
-Verified 2026-11-16 (pasted output): cargo nextest run --workspace: 55 tests pass; clippy clean; scene unchanged on screen (Fifo, ~60 fps, vsync-bound).
+2b-2 step 4: complete (World).
+2b-2 step 5a: complete (per-chunk origin bind group).
+2b-2 step 5b: complete (3x3 patch via World + neighbourhood meshing).
+Verified 2026-11-16 (pasted output + screenshot): nextest 55 pass; world: 9 chunks, greedy quads 651 with neighbours vs 867 isolated; no visible seams; Fifo, debug, avg 16.69 ms, p99 22.24, max 43.49 (acquire stalls while idle; not yet investigated).
