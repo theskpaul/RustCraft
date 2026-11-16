@@ -72,7 +72,7 @@ impl State {
         let window = Arc::new(
             el.create_window(
                 Window::default_attributes()
-                    .with_title("RustCraft - M2a")
+                    .with_title("RustCraft - v0.1")
                     .with_inner_size(LogicalSize::new(1280.0, 720.0)),
             )
             .context("create_window failed")?,
