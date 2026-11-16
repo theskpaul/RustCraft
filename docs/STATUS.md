@@ -12,4 +12,6 @@ Verified 2b-1 (pasted output, 2026-11-15):
 2b-2 step 2: complete (both meshers generic over BlockView; border-face tests).
 2b-2 step 3: complete (ChunkPos, from_block with div_euclid/rem_euclid, face-order test).
 Verified 2026-11-15 (pasted output): cargo nextest run --workspace: 50 tests pass (rc-core 11, rc-render 31, rc-client 8); clippy clean.
-Next: 2b-2 step 4 = World (HashMap<ChunkPos, Chunk>, get/set block, build a Neighbourhood for a chunk), then step 5 = renderer draws several chunks.
+2b-2 step 4: complete (World: chunk map, world-coord get/set, neighbourhood).
+Verified 2026-11-16 (pasted output): cargo nextest run --workspace: 55 tests pass (rc-core 16, rc-render 31, rc-client 8); clippy clean.
+Next: step 5 = renderer draws several chunks.
