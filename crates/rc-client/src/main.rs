@@ -4,11 +4,10 @@ mod stats;
 mod trace;
 
 use anyhow::{Context, Result};
-use rc_core::{BlockId, Chunk, ChunkPos};
+use rc_core::{BlockId, Chunk, ChunkPos, World};
 use rc_render::camera::Camera;
 use rc_render::chunk_renderer::ChunkRenderer;
 use rc_render::greedy::mesh_chunk_greedy;
-use rc_render::mesher::mesh_chunk;
 use rc_render::{FrameOutcome, GpuContext, render_chunk_frame};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -39,12 +38,21 @@ struct State {
     title_updates: bool,
 }
 
-/// Deterministic blocky terrain for the 2a visual test.
-fn test_chunk() -> Chunk {
+/// Patch of chunks is PATCH x PATCH, all at chunk y = 0.
+const PATCH: i32 = 3;
+
+/// Terrain height at a world (x, z). Pure function of world position, so
+/// neighbouring chunks agree at their shared border.
+fn column_height(wx: i32, wz: i32) -> usize {
+    5 + (wx.div_euclid(4) + wz.div_euclid(4)).rem_euclid(3) as usize
+}
+
+fn terrain_chunk(pos: ChunkPos) -> Chunk {
+    let [ox, _, oz] = pos.origin();
     let mut c = Chunk::new_empty();
     for z in 0..16usize {
         for x in 0..16usize {
-            let h = 5 + (x / 4 + z / 4) % 3;
+            let h = column_height(ox + x as i32, oz + z as i32);
             for y in 0..h {
                 let b = if y + 1 == h {
                     BlockId::GRASS
@@ -57,13 +65,8 @@ fn test_chunk() -> Chunk {
             }
         }
     }
-    // Rooted in the terrain: the column height at (8,8) is 6.
-    for y in 6..13 {
-        c.set(8, y, 8, BlockId::STONE);
-    }
     c
 }
-
 impl State {
     fn new(el: &ActiveEventLoop) -> Result<Self> {
         let window = Arc::new(
@@ -79,19 +82,40 @@ impl State {
 
         let mut chunks =
             ChunkRenderer::new(&gpu.device, gpu.config.format, (size.width, size.height));
-        let chunk = test_chunk();
-        let naive = mesh_chunk(&chunk);
-        let mesh = mesh_chunk_greedy(&chunk);
+        let mut world = World::new();
+        for cz in 0..PATCH {
+            for cx in 0..PATCH {
+                let pos = ChunkPos::new(cx, 0, cz);
+                world.insert_chunk(pos, terrain_chunk(pos));
+            }
+        }
+        // Pillar in the middle chunk, rooted on the column's surface.
+        let h = column_height(24, 24);
+        for y in h..h + 7 {
+            world.set_block(24, y as i32, 24, BlockId::STONE);
+        }
+
+        let (mut with_nb, mut isolated) = (0usize, 0usize);
+        for cz in 0..PATCH {
+            for cx in 0..PATCH {
+                let pos = ChunkPos::new(cx, 0, cz);
+                let nb = world.neighbourhood(pos).expect("chunk was just inserted");
+                let mesh = mesh_chunk_greedy(&nb);
+                with_nb += mesh.face_count();
+                isolated += mesh_chunk_greedy(world.chunk(pos).expect("loaded")).face_count();
+                chunks.upload_chunk(&gpu.device, pos, &mesh);
+            }
+        }
         log::info!(
-            "test chunk: naive {} quads / {} vertices, greedy {} quads / {} vertices",
-            naive.face_count(),
-            naive.vertices.len(),
-            mesh.face_count(),
-            mesh.vertices.len()
+            "world: {} chunks uploaded; greedy quads with neighbours {with_nb}, meshed in isolation {isolated}",
+            chunks.chunk_count()
         );
-        chunks.upload_chunk(&gpu.device, ChunkPos::new(0, 0, 0), &mesh);
 
         let aspect = size.width.max(1) as f32 / size.height.max(1) as f32;
+
+        let mut camera = Camera::new(aspect);
+        camera.position = glam::Vec3::new(24.0, 24.0, 80.0);
+
         let exit_after = std::env::var("RC_EXIT_AFTER")
             .ok()
             .and_then(|s| s.parse::<f64>().ok())
@@ -101,7 +125,7 @@ impl State {
             window,
             gpu,
             chunks,
-            camera: Camera::new(aspect),
+            camera,
             fly: fly::FlyInput::default(),
             grabbed: false,
             stats: stats::FrameStats::new(),
