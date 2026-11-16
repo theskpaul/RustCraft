@@ -4,7 +4,7 @@ mod stats;
 mod trace;
 
 use anyhow::{Context, Result};
-use rc_core::{BlockId, Chunk};
+use rc_core::{BlockId, Chunk, ChunkPos};
 use rc_render::camera::Camera;
 use rc_render::chunk_renderer::ChunkRenderer;
 use rc_render::greedy::mesh_chunk_greedy;
@@ -89,7 +89,7 @@ impl State {
             mesh.face_count(),
             mesh.vertices.len()
         );
-        chunks.upload_chunk(&gpu.device, &mesh, [0, 0, 0]);
+        chunks.upload_chunk(&gpu.device, ChunkPos::new(0, 0, 0), &mesh);
 
         let aspect = size.width.max(1) as f32 / size.height.max(1) as f32;
         let exit_after = std::env::var("RC_EXIT_AFTER")

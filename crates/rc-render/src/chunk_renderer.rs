@@ -2,6 +2,8 @@ use crate::color::srgb3_to_linear;
 use crate::mesher::{ChunkMesh, Vertex};
 use bytemuck::{Pod, Zeroable};
 use glam::Mat4;
+use rc_core::ChunkPos;
+use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -13,23 +15,24 @@ const SKY_SRGB: [f32; 3] = [0.53, 0.72, 0.92];
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct Globals {
     view_proj: [[f32; 4]; 4],
-    origin: [f32; 4],
 }
 
 struct GpuMesh {
     vb: wgpu::Buffer,
     ib: wgpu::Buffer,
     index_count: u32,
+    /// Group 1: this chunk's world origin. The bind group keeps its buffer alive.
+    origin_bg: wgpu::BindGroup,
 }
 
-/// 2a: a single chunk, origin in a uniform. 2b replaces this with per-chunk draw data.
+/// Draws any number of chunks. Each chunk has its own buffers and origin.
 pub struct ChunkRenderer {
     pipeline: wgpu::RenderPipeline,
     globals_buf: wgpu::Buffer,
     globals_bg: wgpu::BindGroup,
+    chunk_bgl: wgpu::BindGroupLayout,
     depth_view: wgpu::TextureView,
-    mesh: Option<GpuMesh>,
-    origin: [f32; 4],
+    meshes: HashMap<ChunkPos, GpuMesh>,
 }
 
 fn create_depth_view(device: &wgpu::Device, size: (u32, u32)) -> wgpu::TextureView {
@@ -51,6 +54,22 @@ fn create_depth_view(device: &wgpu::Device, size: (u32, u32)) -> wgpu::TextureVi
         .create_view(&wgpu::TextureViewDescriptor::default())
 }
 
+fn uniform_bgl(device: &wgpu::Device, label: &str) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some(label),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    })
+}
+
 impl ChunkRenderer {
     pub fn new(device: &wgpu::Device, color_format: wgpu::TextureFormat, size: (u32, u32)) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -64,22 +83,11 @@ impl ChunkRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("globals_bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let globals_bgl = uniform_bgl(device, "globals_bgl");
+        let chunk_bgl = uniform_bgl(device, "chunk_bgl");
         let globals_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("globals_bg"),
-            layout: &bgl,
+            layout: &globals_bgl,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: globals_buf.as_entire_binding(),
@@ -87,7 +95,7 @@ impl ChunkRenderer {
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("chunk_layout"),
-            bind_group_layouts: &[&bgl],
+            bind_group_layouts: &[&globals_bgl, &chunk_bgl],
             push_constant_ranges: &[],
         });
 
@@ -137,9 +145,9 @@ impl ChunkRenderer {
             pipeline,
             globals_buf,
             globals_bg,
+            chunk_bgl,
             depth_view: create_depth_view(device, size),
-            mesh: None,
-            origin: [0.0; 4],
+            meshes: HashMap::new(),
         }
     }
 
@@ -147,12 +155,32 @@ impl ChunkRenderer {
         self.depth_view = create_depth_view(device, size);
     }
 
-    pub fn upload_chunk(&mut self, device: &wgpu::Device, mesh: &ChunkMesh, origin: [i32; 3]) {
-        self.origin = [origin[0] as f32, origin[1] as f32, origin[2] as f32, 0.0];
+    pub fn chunk_count(&self) -> usize {
+        self.meshes.len()
+    }
+
+    /// Upload (or replace) the mesh for `pos`. An empty mesh removes the entry.
+    /// Replacing drops the old `GpuMesh`, which frees its GPU buffers.
+    pub fn upload_chunk(&mut self, device: &wgpu::Device, pos: ChunkPos, mesh: &ChunkMesh) {
         if mesh.is_empty() {
-            self.mesh = None;
+            self.meshes.remove(&pos);
             return;
         }
+        let o = pos.origin();
+        let origin = [o[0] as f32, o[1] as f32, o[2] as f32, 0.0_f32];
+        let origin_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("chunk_origin"),
+            contents: bytemuck::bytes_of(&origin),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+        let origin_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("chunk_origin_bg"),
+            layout: &self.chunk_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: origin_buf.as_entire_binding(),
+            }],
+        });
         let vb = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("chunk_vb"),
             contents: bytemuck::cast_slice(&mesh.vertices),
@@ -163,11 +191,15 @@ impl ChunkRenderer {
             contents: bytemuck::cast_slice(&mesh.indices),
             usage: wgpu::BufferUsages::INDEX,
         });
-        self.mesh = Some(GpuMesh {
-            vb,
-            ib,
-            index_count: mesh.indices.len() as u32,
-        });
+        self.meshes.insert(
+            pos,
+            GpuMesh {
+                vb,
+                ib,
+                index_count: mesh.indices.len() as u32,
+                origin_bg,
+            },
+        );
     }
 
     pub fn render(
@@ -179,7 +211,6 @@ impl ChunkRenderer {
     ) {
         let globals = Globals {
             view_proj: view_proj.to_cols_array_2d(),
-            origin: self.origin,
         };
         queue.write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&globals));
 
@@ -212,9 +243,10 @@ impl ChunkRenderer {
             timestamp_writes: None,
             occlusion_query_set: None,
         });
-        if let Some(m) = &self.mesh {
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.globals_bg, &[]);
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.globals_bg, &[]);
+        for m in self.meshes.values() {
+            pass.set_bind_group(1, &m.origin_bg, &[]);
             pass.set_vertex_buffer(0, m.vb.slice(..));
             pass.set_index_buffer(m.ib.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(0..m.index_count, 0, 0..1);

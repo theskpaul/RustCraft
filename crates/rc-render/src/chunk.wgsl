@@ -1,8 +1,8 @@
 struct Globals {
     view_proj: mat4x4<f32>,
-    origin: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> g: Globals;
+@group(1) @binding(0) var<uniform> chunk_origin: vec4<f32>;
 
 struct VsIn {
     @location(0) a: vec4<u32>, // pos.xyz, face
@@ -29,7 +29,7 @@ var<private> PALETTE: array<vec3<f32>, 4> = array<vec3<f32>, 4>(
 fn vs_main(in: VsIn) -> VsOut {
     var out: VsOut;
     let local = vec3<f32>(f32(in.a.x), f32(in.a.y), f32(in.a.z));
-    out.pos = g.view_proj * vec4<f32>(local + g.origin.xyz, 1.0);
+    out.pos = g.view_proj * vec4<f32>(local + chunk_origin.xyz, 1.0);
     out.color = PALETTE[min(in.b.x, 3u)] * FACE_SHADE[min(in.a.w, 5u)];
     return out;
 }
